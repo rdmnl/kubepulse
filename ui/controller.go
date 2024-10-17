@@ -151,7 +151,6 @@ func (controller *UIController) HandleBackNavigation() {
 func (controller *UIController) HandleNamespaceFilter() {
     form := tview.NewForm()
 
-    // Fetch the list of available namespaces
     namespaces, err := controller.KubernetesClient.ListNamespaces()
     if err != nil {
         utils.Warn(fmt.Sprintf("Error fetching namespaces: %v", err))
@@ -159,7 +158,6 @@ func (controller *UIController) HandleNamespaceFilter() {
         return
     }
 
-    // Create a dropdown with the available namespaces
     namespaceDropdown := tview.NewDropDown().
         SetLabel("Namespace: ").
         SetOptions(namespaces, nil)
@@ -172,14 +170,24 @@ func (controller *UIController) HandleNamespaceFilter() {
             }
             controller.KubernetesClient.SetNamespace(namespace)
             controller.updatePodList()
+            
+            // Restore the full layout including header and status bar
             controller.Application.SetRoot(controller.UIManager.Layout, true)
         }).
         AddButton("Cancel", func() {
+            // Restore the full layout including header and status bar
             controller.Application.SetRoot(controller.UIManager.Layout, true)
         })
 
-    controller.Application.SetRoot(form, true)
+    // Temporarily set the form as the root, preserving the full layout structure
+    controller.Application.SetRoot(tview.NewFlex().
+        SetDirection(tview.FlexRow).
+        AddItem(controller.UIManager.Header, 3, 1, false).
+        AddItem(form, 0, 1, true).
+        AddItem(controller.UIManager.StatusBar, 1, 1, false), true)
 }
+
+
 
 
 // updatePodList updates the pod list panel with the current namespace's pods

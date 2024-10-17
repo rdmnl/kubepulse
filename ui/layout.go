@@ -46,7 +46,6 @@ func SetupUILayout(app *tview.Application, client kubernetes.KubernetesClient) (
     }
 
     // Set up the main layout with flexible proportions
-    // Main panels layout (Pod List, Details, Logs)
     mainLayout := tview.NewFlex().
         SetDirection(tview.FlexColumn).
         AddItem(uiManager.PodListPanel, 0, 2, true).
@@ -54,19 +53,19 @@ func SetupUILayout(app *tview.Application, client kubernetes.KubernetesClient) (
         AddItem(uiManager.LogsViewPanel, 0, 3, false)
 
     // Set up the complete layout with header and status bar
-    layout := tview.NewFlex().
+    fullLayout := tview.NewFlex().
         SetDirection(tview.FlexRow).
-        AddItem(uiManager.Header, 3, 1, false). // Header at the top with height of 3 units
-        AddItem(mainLayout, 0, 1, true).        // Main layout takes most of the screen
-        AddItem(uiManager.StatusBar, 1, 1, false) // Status bar at the bottom with height of 1 unit
+        AddItem(uiManager.Header, 3, 1, false).
+        AddItem(mainLayout, 0, 1, true).
+        AddItem(uiManager.StatusBar, 1, 1, false)
 
-    // Store the layout in UIManager for resizing and other operations
-    uiManager.Layout = mainLayout
+    // Store the full layout in UIManager
+    uiManager.Layout = fullLayout
 
     // Set initial focus to the PodListPanel
     app.SetFocus(uiManager.PodListPanel)
 
-    return uiManager, layout
+    return uiManager, fullLayout
 }
 
 
