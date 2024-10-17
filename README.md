@@ -7,6 +7,7 @@
 
 KubePulse is a terminal-based user interface (TUI) for monitoring Kubernetes clusters. This CLI provides an interactive way to view pod statuses, resource usage (CPU and memory), logs, and more, all from the comfort of your terminal.
 
+![alt text](kubepulse.png)
 
 ## Features
 
