@@ -36,7 +36,6 @@ func SetupUILayout(app *tview.Application, client kubernetes.KubernetesClient) (
     logsViewPanel := panels.SetupLogsViewPanel()
     statusBar := SetupStatusBar()
 
-    // Create the UI manager
     uiManager := &UIManager{
         Header:        header,
         NodeListPanel: nodeListPanel,
@@ -47,30 +46,25 @@ func SetupUILayout(app *tview.Application, client kubernetes.KubernetesClient) (
         CurrentPanel:  0,
     }
 
-    // Create a vertical layout for the first column (NodeListPanel, PodListPanel, DetailsPanel)
     nodePodDetailsColumn := tview.NewFlex().
         SetDirection(tview.FlexRow).
-        AddItem(uiManager.NodeListPanel, 0, 1, false). // Node list panel (flexible height)
-        AddItem(uiManager.PodListPanel, 0, 2, true).   // Pod list panel (flexible height)
-        AddItem(uiManager.DetailsPanel, 0, 1, false)   // Details panel (flexible height)
+        AddItem(uiManager.NodeListPanel, 0, 1, false).
+        AddItem(uiManager.PodListPanel, 0, 2, true).
+        AddItem(uiManager.DetailsPanel, 0, 1, false)
 
-    // Set up the main layout with flexible proportions
     mainLayout := tview.NewFlex().
         SetDirection(tview.FlexColumn).
-        AddItem(nodePodDetailsColumn, 0, 2, true).       // Node, Pod list, and Details panel in first column
-        AddItem(uiManager.LogsViewPanel, 0, 3, false)    // Logs view panel in second column
+        AddItem(nodePodDetailsColumn, 0, 2, true).
+        AddItem(uiManager.LogsViewPanel, 0, 3, false)
 
-    // Set up the complete layout with header and status bar
     fullLayout := tview.NewFlex().
         SetDirection(tview.FlexRow).
-        AddItem(uiManager.Header, 3, 1, false).         // Header at the top
-        AddItem(mainLayout, 0, 1, true).                // Main layout in the middle
-        AddItem(uiManager.StatusBar, 1, 1, false)       // Status bar at the bottom
+        AddItem(uiManager.Header, 3, 1, false).
+        AddItem(mainLayout, 0, 1, true).
+        AddItem(uiManager.StatusBar, 1, 1, false)
 
-    // Store the full layout in UIManager
     uiManager.Layout = fullLayout
 
-    // Set initial focus to the PodListPanel
     app.SetFocus(uiManager.PodListPanel)
 
     return uiManager, fullLayout
@@ -100,9 +94,11 @@ func SetupStatusBar() *tview.TextView {
     // Set the text using the updated constants
     statusBar.SetText(
         quitInstruction + " | " +
-        viewLogsInstruction + " | " +
-        switchPanelsInstruction + " | " +
-        selectPodInstruction + " | " +
+        podShortcut + " | " +
+        nodeShortcut + " | " +
+        detailShortcut + " | " +
+        logShortcut + " | " +
+        filterNamespaceInstruction + " | " +
         backInstruction).
         SetDynamicColors(true).
         SetTextColor(tview.Styles.PrimaryTextColor).
@@ -110,6 +106,3 @@ func SetupStatusBar() *tview.TextView {
     
     return statusBar
 }
-
-
-

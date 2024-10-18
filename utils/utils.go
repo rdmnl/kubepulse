@@ -20,8 +20,8 @@ func CreateTextView(defaultText string, borderColor tcell.Color, textColor tcell
 		SetTextColor(textColor).
 		SetBackgroundColor(tcell.ColorBlack).
 		SetBorder(true).
-		SetBorderColor(borderColor).
-		SetTitle(title)
+		SetBorderColor(borderColor)
+		// SetTitle(title)
 
 	return textView
 }

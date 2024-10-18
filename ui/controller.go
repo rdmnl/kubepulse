@@ -18,16 +18,14 @@ import (
 )
 
 const (
-    quitInstruction         = "'q' Quit"
-    switchPanelsInstruction = "'Tab/Arrow' Switch Panels"
-    backInstruction         = "'b' Back"
-    selectPodInstruction    = "'Enter' Select Pod"
-    viewLogsInstruction     = "'l' View Logs"
+    quitInstruction = "'q' Quit"
+    podShortcut = "'p' Pods"
+    nodeShortcut = "'n' Nodes"
+    logShortcut = "'l' Logs"
+    detailShortcut = "'d' Details"
     filterNamespaceInstruction = "'f' Filter Namespace"
+    backInstruction = "'b' Back"                
 )
-
-
-
 
 type UIController struct {
     UIManager        *UIManager
@@ -65,7 +63,7 @@ func (controller *UIController) startPeriodicUpdate() {
 
 
 func (controller *UIController) setPanelFocus(panelIndex int) {
-    if panelIndex < 0 || panelIndex > 2 {
+    if panelIndex < 0 || panelIndex > 3 {
         errorMessage := fmt.Sprintf("Invalid panel index: %d", panelIndex)
         utils.Warn(errorMessage)
         controller.UIManager.StatusBar.SetText("[red]" + errorMessage)
@@ -73,7 +71,12 @@ func (controller *UIController) setPanelFocus(panelIndex int) {
     }
 
     controller.UIManager.CurrentPanel = panelIndex
-    panels := []tview.Primitive{controller.UIManager.PodListPanel, controller.UIManager.DetailsPanel, controller.UIManager.LogsViewPanel}
+    panels := []tview.Primitive{
+        controller.UIManager.PodListPanel,     // Index 0
+        controller.UIManager.NodeListPanel,    // Index 1
+        controller.UIManager.DetailsPanel,     // Index 2
+        controller.UIManager.LogsViewPanel,    // Index 3
+    }
     controller.Application.SetFocus(panels[panelIndex])
 
     // Update status bar and focus indicator
@@ -81,6 +84,7 @@ func (controller *UIController) setPanelFocus(panelIndex int) {
     controller.updateFocusIndicator()
     utils.Info(fmt.Sprintf("Switched focus to panel: %d", panelIndex))
 }
+
 
 
 
@@ -364,10 +368,9 @@ func (controller *UIController) updatePodList() {
     controller.updateStatusBar()
 }
 
-
 // UpdateFocusIndicator updates the visual indication of the currently focused panel
 func (controller *UIController) updateFocusIndicator() {
-    if controller.UIManager.CurrentPanel < 0 || controller.UIManager.CurrentPanel > 2 {
+    if controller.UIManager.CurrentPanel < 0 || controller.UIManager.CurrentPanel > 3 {
         errorMessage := fmt.Sprintf("Invalid panel index: %d", controller.UIManager.CurrentPanel)
         utils.Warn(errorMessage)
         controller.UIManager.StatusBar.SetText("[red]" + errorMessage)
@@ -376,34 +379,40 @@ func (controller *UIController) updateFocusIndicator() {
 
     panels := []*tview.Table{
         controller.UIManager.PodListPanel,
+        controller.UIManager.NodeListPanel,
     }
     textPanels := []*tview.TextView{
         controller.UIManager.DetailsPanel,
         controller.UIManager.LogsViewPanel,
     }
 
+    panelTitles := [4]string{" Pods ", " Nodes ", " Detail ", " Logs "}
+
+    // Highlight Table Panels
     for i, panel := range panels {
         if i == controller.UIManager.CurrentPanel {
-            panel.SetBorderColor(tcell.ColorYellow) // Highlight focused panel
-            panel.SetTitle(fmt.Sprintf("[yellow]%s[white]", panel.GetTitle())) // Highlight title in yellow
+            panel.SetBorderColor(tcell.ColorLightGreen)
+            panel.SetTitle(panelTitles[i])
         } else {
-            panel.SetBorderColor(tcell.ColorLightCyan) // Default color for unfocused
-            panel.SetTitle(panel.GetTitle()) // Reset title
+            panel.SetBorderColor(tcell.ColorGray)
+            panel.SetTitle("")
         }
     }
 
+    // Highlight TextView Panels
     for i, panel := range textPanels {
-        if i+1 == controller.UIManager.CurrentPanel { // +1 because tables and text panels are treated differently here
-            panel.SetBorderColor(tcell.ColorYellow) // Highlight focused panel
-            panel.SetTitle(fmt.Sprintf("[yellow]%s[white]", panel.GetTitle())) // Highlight title in yellow
+        if i+2 == controller.UIManager.CurrentPanel {
+            panel.SetBorderColor(tcell.ColorLightGreen)
+            panel.SetTitle(panelTitles[i+2])
         } else {
-            panel.SetBorderColor(tcell.ColorLightCyan) // Default color for unfocused
-            panel.SetTitle(panel.GetTitle()) // Reset title
+            panel.SetBorderColor(tcell.ColorGray)
+            panel.SetTitle("")
         }
     }
 
     utils.Info(fmt.Sprintf("Focus indicator updated for panel: %d", controller.UIManager.CurrentPanel))
 }
+
 
 func (controller *UIController) getSelectedPod() (string, error) {
     row, _ := controller.UIManager.PodListPanel.GetSelection()
@@ -417,38 +426,63 @@ func (controller *UIController) getSelectedPod() (string, error) {
     return selectedPod, nil
 }
 
-
-
+func (controller *UIController) updateStatusBar() {
+    statusMessage := controller.getStatusBarMessage(controller.UIManager.CurrentPanel, controller.UIManager.SelectedPod)
+    controller.UIManager.StatusBar.SetText(statusMessage)
+    utils.Info("Status bar updated")
+}
 
 func (controller *UIController) getStatusBarMessage(panel int, selectedPod string) string {
     switch panel {
     case 0: // PodListPanel
         if controller.UIManager.PodListPanel.GetRowCount() > 0 {
-            return fmt.Sprintf("%s | %s | %s | %s | %s", quitInstruction, filterNamespaceInstruction, viewLogsInstruction, switchPanelsInstruction, selectPodInstruction)
+            return fmt.Sprintf("%s | %s | %s | %s | %s | %s | %s", 
+                quitInstruction, 
+                podShortcut, 
+                nodeShortcut, 
+                detailShortcut, 
+                logShortcut, 
+                filterNamespaceInstruction, 
+                backInstruction)
         } else {
-            return fmt.Sprintf("No pods available. %s | %s", quitInstruction, switchPanelsInstruction)
+            return fmt.Sprintf("No pods available. %s | %s | %s", 
+                quitInstruction, 
+                podShortcut, 
+                nodeShortcut)
         }
-    case 1: // DetailsPanel
+    case 1: // NodeListPanel
+        return fmt.Sprintf("%s | %s | %s | %s", 
+            quitInstruction, 
+            podShortcut, 
+            nodeShortcut, 
+            backInstruction)
+    case 2: // DetailsPanel
         if selectedPod != "" {
-            return fmt.Sprintf("%s | %s | %s", backInstruction, switchPanelsInstruction, quitInstruction)
+            return fmt.Sprintf("%s | %s | %s | %s", 
+                backInstruction, 
+                podShortcut, 
+                nodeShortcut, 
+                quitInstruction)
         } else {
-            return fmt.Sprintf("No pod selected. %s", backInstruction)
+            return fmt.Sprintf("No pod selected. %s | %s | %s", 
+                backInstruction, 
+                podShortcut, 
+                nodeShortcut)
         }
-    case 2: // LogsViewPanel
+    case 3: // LogsViewPanel
         if selectedPod != "" {
-            return fmt.Sprintf("%s | %s | %s", backInstruction, switchPanelsInstruction, quitInstruction)
+            return fmt.Sprintf("%s | %s | %s | %s", 
+                backInstruction, 
+                podShortcut, 
+                nodeShortcut, 
+                quitInstruction)
         } else {
-            return fmt.Sprintf("No logs available. %s", backInstruction)
+            return fmt.Sprintf("No logs available. %s | %s | %s", 
+                backInstruction, 
+                podShortcut, 
+                nodeShortcut)
         }
     default:
         return fmt.Sprintf("[red]Invalid panel index: %d", panel)
     }
-}
-
-
-
-func (controller *UIController) updateStatusBar() {
-    statusMessage := controller.getStatusBarMessage(controller.UIManager.CurrentPanel, controller.UIManager.SelectedPod)
-    controller.UIManager.StatusBar.SetText(statusMessage)
-    utils.Info("Status bar updated")
 }

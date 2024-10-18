@@ -15,48 +15,40 @@ import (
 	"github.com/rivo/tview"
 )
 
-// SetupNavigation sets up key navigation for the UI
 func SetupNavigation(app *tview.Application, controller *UIController) {
     utils.Info("Navigation setup started.")
 
     app.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
         utils.Info(fmt.Sprintf("Key pressed: %v", event))
 
-        // Check if the current element is an input field and ignore global bindings if true
         if _, ok := app.GetFocus().(*tview.InputField); ok {
-            return event // Allow typing without interference
+            return event
         }
 
         switch event.Key() {
-        case tcell.KeyRight:
-            newPanelIndex := (controller.UIManager.CurrentPanel + 1) % 3 // Cycle to the next panel
-            controller.setPanelFocus(newPanelIndex)
-
-        case tcell.KeyLeft:
-            newPanelIndex := (controller.UIManager.CurrentPanel - 1 + 3) % 3 // Cycle to the previous panel
-            controller.setPanelFocus(newPanelIndex)
-
-        case tcell.KeyEnter:
-            if controller.UIManager.PodListPanel.HasFocus() {
-                controller.HandlePodSelection()
-            }
-
         case tcell.KeyRune:
             switch event.Rune() {
+            case 'p':
+                controller.setPanelFocus(0)
+            case 'n':
+                controller.setPanelFocus(1)
+            case 'd':
+                controller.setPanelFocus(2)
             case 'l':
                 if controller.UIManager.PodListPanel.HasFocus() {
                     controller.HandleLogView()
                 }
-
             case 'b':
                 controller.HandleBackNavigation()
-
             case 'f':
                 controller.HandleNamespaceFilter()
-
             case 'q':
                 utils.Info("Quit key pressed")
                 app.Stop()
+            }
+        case tcell.KeyEnter:
+            if controller.UIManager.PodListPanel.HasFocus() {
+                controller.HandlePodSelection()
             }
         }
         return event
