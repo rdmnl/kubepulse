@@ -12,7 +12,6 @@ import (
 	"github.com/rivo/tview"
 )
 
-// CreateTextView creates a reusable TextView component with customizable attributes
 func CreateTextView(defaultText string, borderColor tcell.Color, textColor tcell.Color, title string) *tview.TextView {
 	textView := tview.NewTextView()
 	textView.SetText(defaultText).
@@ -20,8 +19,9 @@ func CreateTextView(defaultText string, borderColor tcell.Color, textColor tcell
 		SetTextColor(textColor).
 		SetBackgroundColor(tcell.ColorBlack).
 		SetBorder(true).
-		SetBorderColor(borderColor)
-		// SetTitle(title)
+		SetBorderColor(borderColor).
+		SetTitle(title).
+		SetTitleAlign(tview.AlignLeft)
 
 	return textView
 }
