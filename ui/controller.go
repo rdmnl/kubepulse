@@ -9,6 +9,7 @@ package ui
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rdmnl/kubepulse/pkg/kubernetes"
@@ -34,16 +35,32 @@ type UIController struct {
     KubernetesClient kubernetes.KubernetesClient
 }
 
-// NewUIController initializes a new UIController with the necessary state
+// NewUIController initializes a new UIController with the necessary state and sets up periodic updates.
 func NewUIController(app *tview.Application, uiManager *UIManager, client kubernetes.KubernetesClient) *UIController {
-    return &UIController{
+    controller := &UIController{
         Application:      app,
         UIManager:        uiManager,
         KubernetesClient: client,
     }
+
+    // Set up periodic update for pod list and metrics
+    go controller.startPeriodicUpdate()
+
+    return controller
 }
 
+// startPeriodicUpdate refreshes the pod list every few seconds
+func (controller *UIController) startPeriodicUpdate() {
+    ticker := time.NewTicker(10 * time.Second) // Set update interval, e.g., every 10 seconds
+    defer ticker.Stop()
 
+    for {
+        <-ticker.C
+        controller.Application.QueueUpdateDraw(func() {
+            controller.updatePodList()
+        })
+    }
+}
 
 
 func (controller *UIController) setPanelFocus(panelIndex int) {
@@ -151,6 +168,7 @@ func (controller *UIController) HandleBackNavigation() {
 func (controller *UIController) HandleNamespaceFilter() {
     form := tview.NewForm()
 
+    // Fetch the list of available namespaces
     namespaces, err := controller.KubernetesClient.ListNamespaces()
     if err != nil {
         utils.Warn(fmt.Sprintf("Error fetching namespaces: %v", err))
@@ -158,6 +176,7 @@ func (controller *UIController) HandleNamespaceFilter() {
         return
     }
 
+    // Create a dropdown with the available namespaces
     namespaceDropdown := tview.NewDropDown().
         SetLabel("Namespace: ").
         SetOptions(namespaces, nil)
@@ -170,23 +189,80 @@ func (controller *UIController) HandleNamespaceFilter() {
             }
             controller.KubernetesClient.SetNamespace(namespace)
             controller.updatePodList()
-            
-            // Restore the full layout including header and status bar
-            controller.Application.SetRoot(controller.UIManager.Layout, true)
+            controller.updatePodTable() // Added call to updatePodTable to refresh the view with updated namespace data
+            controller.Application.SetRoot(controller.UIManager.Layout, true) // Restore the main layout
         }).
         AddButton("Cancel", func() {
-            // Restore the full layout including header and status bar
-            controller.Application.SetRoot(controller.UIManager.Layout, true)
+            controller.Application.SetRoot(controller.UIManager.Layout, true) // Restore the main layout
         })
 
-    // Temporarily set the form as the root, preserving the full layout structure
-    controller.Application.SetRoot(tview.NewFlex().
+    // Center the form using a modal-like Flex
+    modal := tview.NewFlex().
         SetDirection(tview.FlexRow).
-        AddItem(controller.UIManager.Header, 3, 1, false).
-        AddItem(form, 0, 1, true).
-        AddItem(controller.UIManager.StatusBar, 1, 1, false), true)
+        AddItem(nil, 0, 1, false).  // Empty space above the form to center vertically
+        AddItem(form, 10, 1, true). // The form itself
+        AddItem(nil, 0, 1, false)   // Empty space below the form
+
+    // Configure the form for better visual appearance
+    form.SetBorder(true).
+        SetTitle("Select Namespace").
+        SetTitleAlign(tview.AlignCenter)
+
+    // Display the modal
+    controller.Application.SetRoot(modal, true)
+
 }
 
+
+// updatePodTable fetches pod data and updates the table
+func (controller *UIController) updatePodTable() {
+    pods, err := controller.KubernetesClient.GetPods()
+    if err != nil {
+        utils.Warn(fmt.Sprintf("Error fetching pods: %v", err))
+        controller.UIManager.StatusBar.SetText("[red]Error fetching pods")
+        return
+    }
+
+    controller.UIManager.PodListPanel.Clear()
+    // Set header row
+    controller.UIManager.PodListPanel.SetCell(0, 0, tview.NewTableCell("Pod Name").
+        SetTextColor(tcell.ColorWhite).
+        SetSelectable(false).
+        SetAlign(tview.AlignCenter))
+    controller.UIManager.PodListPanel.SetCell(0, 1, tview.NewTableCell("CPU Usage").
+        SetTextColor(tcell.ColorWhite).
+        SetSelectable(false).
+        SetAlign(tview.AlignCenter))
+    controller.UIManager.PodListPanel.SetCell(0, 2, tview.NewTableCell("Memory Usage").
+        SetTextColor(tcell.ColorWhite).
+        SetSelectable(false).
+        SetAlign(tview.AlignCenter))
+
+    for row, pod := range pods {
+        cpuUsage, memoryUsage, err := controller.KubernetesClient.GetPodMetrics(pod)
+        if err != nil {
+            utils.Warn(fmt.Sprintf("Error fetching metrics for pod %s: %v", pod, err))
+            cpuUsage, memoryUsage = "N/A", "N/A"
+        }
+
+        controller.UIManager.PodListPanel.SetCell(row+1, 0, tview.NewTableCell(pod).
+            SetTextColor(tcell.ColorLightYellow).
+            SetBackgroundColor(tcell.ColorBlack).
+            SetSelectable(true))
+
+        controller.UIManager.PodListPanel.SetCell(row+1, 1, tview.NewTableCell(cpuUsage).
+            SetTextColor(tcell.ColorLightGreen).
+            SetBackgroundColor(tcell.ColorBlack).
+            SetSelectable(false))
+
+        controller.UIManager.PodListPanel.SetCell(row+1, 2, tview.NewTableCell(memoryUsage).
+            SetTextColor(tcell.ColorLightBlue).
+            SetBackgroundColor(tcell.ColorBlack).
+            SetSelectable(false))
+    }
+
+    controller.updateStatusBar()
+}
 
 
 
@@ -199,11 +275,46 @@ func (controller *UIController) updatePodList() {
         return
     }
 
+    // Clear the pod list but set up headers again
     controller.UIManager.PodListPanel.Clear()
+
+    // Set header row
+    controller.UIManager.PodListPanel.SetCell(0, 0, tview.NewTableCell("Pod Name").
+        SetTextColor(tcell.ColorWhite).
+        SetSelectable(false).
+        SetAlign(tview.AlignCenter))
+    controller.UIManager.PodListPanel.SetCell(0, 1, tview.NewTableCell("CPU Usage").
+        SetTextColor(tcell.ColorWhite).
+        SetSelectable(false).
+        SetAlign(tview.AlignCenter))
+    controller.UIManager.PodListPanel.SetCell(0, 2, tview.NewTableCell("Memory Usage").
+        SetTextColor(tcell.ColorWhite).
+        SetSelectable(false).
+        SetAlign(tview.AlignCenter))
+
+    // Add pod data
     for row, pod := range pods {
-        controller.UIManager.PodListPanel.SetCell(row, 0, tview.NewTableCell(pod).
+        cpuUsage, memoryUsage, err := controller.KubernetesClient.GetPodMetrics(pod)
+        if err != nil {
+            cpuUsage = "N/A"
+            memoryUsage = "N/A"
+            utils.Warn(fmt.Sprintf("Error fetching metrics for pod %s: %v", pod, err))
+        }
+
+        controller.UIManager.PodListPanel.SetCell(row+1, 0, tview.NewTableCell(pod).
             SetTextColor(tcell.ColorLightYellow).
-            SetSelectable(true))
+            SetSelectable(true).
+            SetAlign(tview.AlignLeft))
+
+        controller.UIManager.PodListPanel.SetCell(row+1, 1, tview.NewTableCell(cpuUsage).
+            SetTextColor(tcell.ColorLightGreen).
+            SetSelectable(false).
+            SetAlign(tview.AlignRight))
+
+        controller.UIManager.PodListPanel.SetCell(row+1, 2, tview.NewTableCell(memoryUsage).
+            SetTextColor(tcell.ColorLightBlue).
+            SetSelectable(false).
+            SetAlign(tview.AlignRight))
     }
 
     controller.updateStatusBar()
