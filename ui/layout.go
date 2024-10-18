@@ -17,6 +17,7 @@ import (
 
 type UIManager struct {
     Header       *tview.TextView   // Header panel at the top of the UI
+    NodeListPanel *tview.Table     // Panel that lists nodes
     PodListPanel *tview.Table      // Panel that lists pods
     DetailsPanel *tview.TextView   // Panel that shows details of a selected pod
     LogsViewPanel *tview.TextView  // Panel that shows logs of a selected pod
@@ -26,10 +27,10 @@ type UIManager struct {
     Layout       *tview.Flex       // The main layout of the UI
 }
 
-// SetupUILayout sets up the entire UI layout with flexible panel proportions
 func SetupUILayout(app *tview.Application, client kubernetes.KubernetesClient) (*UIManager, *tview.Flex) {
     // Create the panels
     header := SetupHeader()
+    nodeListPanel := panels.SetupNodeListPanel(client)
     podListPanel := panels.SetupPodListPanel(client)
     detailsPanel := panels.SetupDetailsPanel()
     logsViewPanel := panels.SetupLogsViewPanel()
@@ -37,27 +38,34 @@ func SetupUILayout(app *tview.Application, client kubernetes.KubernetesClient) (
 
     // Create the UI manager
     uiManager := &UIManager{
-        Header:       header,
-        PodListPanel: podListPanel,
-        DetailsPanel: detailsPanel,
+        Header:        header,
+        NodeListPanel: nodeListPanel,
+        PodListPanel:  podListPanel,
+        DetailsPanel:  detailsPanel,
         LogsViewPanel: logsViewPanel,
-        StatusBar:    statusBar,
-        CurrentPanel: 0,
+        StatusBar:     statusBar,
+        CurrentPanel:  0,
     }
+
+    // Create a vertical layout for the first column (NodeListPanel, PodListPanel, DetailsPanel)
+    nodePodDetailsColumn := tview.NewFlex().
+        SetDirection(tview.FlexRow).
+        AddItem(uiManager.NodeListPanel, 0, 1, false). // Node list panel (flexible height)
+        AddItem(uiManager.PodListPanel, 0, 2, true).   // Pod list panel (flexible height)
+        AddItem(uiManager.DetailsPanel, 0, 1, false)   // Details panel (flexible height)
 
     // Set up the main layout with flexible proportions
     mainLayout := tview.NewFlex().
         SetDirection(tview.FlexColumn).
-        AddItem(uiManager.PodListPanel, 0, 2, true).
-        AddItem(uiManager.DetailsPanel, 0, 1, false).
-        AddItem(uiManager.LogsViewPanel, 0, 3, false)
+        AddItem(nodePodDetailsColumn, 0, 2, true).       // Node, Pod list, and Details panel in first column
+        AddItem(uiManager.LogsViewPanel, 0, 3, false)    // Logs view panel in second column
 
     // Set up the complete layout with header and status bar
     fullLayout := tview.NewFlex().
         SetDirection(tview.FlexRow).
-        AddItem(uiManager.Header, 3, 1, false).
-        AddItem(mainLayout, 0, 1, true).
-        AddItem(uiManager.StatusBar, 1, 1, false)
+        AddItem(uiManager.Header, 3, 1, false).         // Header at the top
+        AddItem(mainLayout, 0, 1, true).                // Main layout in the middle
+        AddItem(uiManager.StatusBar, 1, 1, false)       // Status bar at the bottom
 
     // Store the full layout in UIManager
     uiManager.Layout = fullLayout
@@ -69,12 +77,15 @@ func SetupUILayout(app *tview.Application, client kubernetes.KubernetesClient) (
 }
 
 
+
+
+
 // TODO Get version properly
 // SetupHeader creates a TextView for the header with a name/description at the top of the UI
 func SetupHeader() *tview.TextView {
     header := tview.NewTextView()
     header.SetTextAlign(tview.AlignCenter).
-        SetText(" KubePulse - Kubernetes Cluster Monitor v0.1.0-alpha ").
+        SetText(" KubePulse - Kubernetes Cluster Monitor ").
         SetDynamicColors(true).
         SetTextColor(tcell.ColorLightCyan).
         SetBackgroundColor(tcell.ColorBlack).

@@ -15,5 +15,5 @@ import (
 
 // SetupDetailsPanel sets up the details panel using the generalized CreateTextView utility
 func SetupDetailsPanel() *tview.TextView {
-	return utils.CreateTextView("Pod Details:\n", tcell.ColorLightCyan, tcell.ColorLightGreen, "Details Panel")
+	return utils.CreateTextView("Pod Details:\n", tcell.ColorLightCyan, tcell.ColorLightGreen, "Pod Details")
 }
