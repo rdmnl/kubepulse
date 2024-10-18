@@ -15,5 +15,5 @@ import (
 
 // SetupLogsViewPanel sets up the logs view panel using the generalized CreateTextView utility
 func SetupLogsViewPanel() *tview.TextView {
-	return utils.CreateTextView("Logs:\n", tcell.ColorLightCyan, tcell.ColorLightGreen, "Logs Panel")
+	return utils.CreateTextView("Logs:\n", tcell.ColorLightCyan, tcell.ColorLightGreen, "Logs")
 }

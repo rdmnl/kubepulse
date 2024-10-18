@@ -33,16 +33,15 @@ func SetupPodListPanel(client kubernetes.KubernetesClient) *tview.Table {
         SetTextColor(tcell.ColorWhite).
         SetSelectable(false).
         SetAlign(tview.AlignCenter))
-    table.SetCell(0, 1, tview.NewTableCell("CPU Usage").
+    table.SetCell(0, 1, tview.NewTableCell("CPU").
         SetTextColor(tcell.ColorWhite).
         SetSelectable(false).
         SetAlign(tview.AlignCenter))
-    table.SetCell(0, 2, tview.NewTableCell("Memory Usage").
+    table.SetCell(0, 2, tview.NewTableCell("Memory").
         SetTextColor(tcell.ColorWhite).
         SetSelectable(false).
         SetAlign(tview.AlignCenter))
 
-    // Fetch and display pod data
     pods, err := client.GetPods()
     if err != nil {
         utils.Info(fmt.Sprintf("Error fetching pods: %v", err))
@@ -54,7 +53,6 @@ func SetupPodListPanel(client kubernetes.KubernetesClient) *tview.Table {
             continue
         }
 
-        // Fetch pod metrics (CPU and Memory usage)
         cpuUsage, memoryUsage, err := client.GetPodMetrics(pod)
         if err != nil {
             cpuUsage = "N/A"

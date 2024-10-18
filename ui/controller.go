@@ -58,6 +58,7 @@ func (controller *UIController) startPeriodicUpdate() {
         <-ticker.C
         controller.Application.QueueUpdateDraw(func() {
             controller.updatePodList()
+            controller.updateNodeList()
         })
     }
 }
@@ -229,11 +230,11 @@ func (controller *UIController) updatePodTable() {
         SetTextColor(tcell.ColorWhite).
         SetSelectable(false).
         SetAlign(tview.AlignCenter))
-    controller.UIManager.PodListPanel.SetCell(0, 1, tview.NewTableCell("CPU Usage").
+    controller.UIManager.PodListPanel.SetCell(0, 1, tview.NewTableCell("CPU").
         SetTextColor(tcell.ColorWhite).
         SetSelectable(false).
         SetAlign(tview.AlignCenter))
-    controller.UIManager.PodListPanel.SetCell(0, 2, tview.NewTableCell("Memory Usage").
+    controller.UIManager.PodListPanel.SetCell(0, 2, tview.NewTableCell("Memory").
         SetTextColor(tcell.ColorWhite).
         SetSelectable(false).
         SetAlign(tview.AlignCenter))
@@ -264,6 +265,49 @@ func (controller *UIController) updatePodTable() {
     controller.updateStatusBar()
 }
 
+// updateNodeList fetches node data and updates the node list table
+func (controller *UIController) updateNodeList() {
+    nodes, err := controller.KubernetesClient.GetNodes()
+    if err != nil {
+        controller.UIManager.StatusBar.SetText("[red]Error fetching nodes")
+        return
+    }
+
+    controller.UIManager.NodeListPanel.Clear()
+
+    // Set header row
+    controller.UIManager.NodeListPanel.SetCell(0, 0, tview.NewTableCell("Node Name").
+        SetTextColor(tcell.ColorWhite).
+        SetSelectable(false).
+        SetAlign(tview.AlignCenter))
+    controller.UIManager.NodeListPanel.SetCell(0, 1, tview.NewTableCell("CPU").
+        SetTextColor(tcell.ColorWhite).
+        SetSelectable(false).
+        SetAlign(tview.AlignCenter))
+    controller.UIManager.NodeListPanel.SetCell(0, 2, tview.NewTableCell("Memory").
+        SetTextColor(tcell.ColorWhite).
+        SetSelectable(false).
+        SetAlign(tview.AlignCenter))
+
+    // Add node data to the panel
+    for row, node := range nodes {
+        cpuUsage, memoryUsage, err := controller.KubernetesClient.GetNodeMetrics(node)
+        if err != nil {
+            cpuUsage = "N/A"
+            memoryUsage = "N/A"
+        }
+
+        controller.UIManager.NodeListPanel.SetCell(row+1, 0, tview.NewTableCell(node).
+            SetTextColor(tcell.ColorLightYellow).
+            SetSelectable(true))
+        controller.UIManager.NodeListPanel.SetCell(row+1, 1, tview.NewTableCell(cpuUsage).
+            SetTextColor(tcell.ColorLightGreen).
+            SetAlign(tview.AlignRight))
+        controller.UIManager.NodeListPanel.SetCell(row+1, 2, tview.NewTableCell(memoryUsage).
+            SetTextColor(tcell.ColorLightBlue).
+            SetAlign(tview.AlignRight))
+    }
+}
 
 
 // updatePodList updates the pod list panel with the current namespace's pods
@@ -283,11 +327,11 @@ func (controller *UIController) updatePodList() {
         SetTextColor(tcell.ColorWhite).
         SetSelectable(false).
         SetAlign(tview.AlignCenter))
-    controller.UIManager.PodListPanel.SetCell(0, 1, tview.NewTableCell("CPU Usage").
+    controller.UIManager.PodListPanel.SetCell(0, 1, tview.NewTableCell("CPU").
         SetTextColor(tcell.ColorWhite).
         SetSelectable(false).
         SetAlign(tview.AlignCenter))
-    controller.UIManager.PodListPanel.SetCell(0, 2, tview.NewTableCell("Memory Usage").
+    controller.UIManager.PodListPanel.SetCell(0, 2, tview.NewTableCell("Memory").
         SetTextColor(tcell.ColorWhite).
         SetSelectable(false).
         SetAlign(tview.AlignCenter))
@@ -372,6 +416,9 @@ func (controller *UIController) getSelectedPod() (string, error) {
     }
     return selectedPod, nil
 }
+
+
+
 
 func (controller *UIController) getStatusBarMessage(panel int, selectedPod string) string {
     switch panel {

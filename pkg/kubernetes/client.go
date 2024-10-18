@@ -19,17 +19,16 @@ import (
 	metricsclient "k8s.io/metrics/pkg/client/clientset/versioned"
 )
 
-
 type KubernetesClient interface {
+    GetNodes() ([]string, error)
+    GetNodeMetrics(nodeName string) (cpuUsage string, memoryUsage string, err error)
     GetPods() ([]string, error)
+    GetPodMetrics(podName string) (cpuUsage string, memoryUsage string, err error)
     GetPodDetails(podName string) (string, error)
     GetPodLogs(podName string) (string, error)
     SetNamespace(namespace string)
-    GetPodMetrics(podName string) (cpuUsage string, memoryUsage string, err error)
     ListNamespaces() ([]string, error)
 }
-
-
 
 type Client struct {
     clientset     *kubernetes.Clientset
@@ -73,6 +72,39 @@ func (c *Client) SetNamespace(namespace string) {
     c.namespace = namespace
 }
 
+
+// GetNodes retrieves the list of nodes from the cluster
+func (c *Client) GetNodes() ([]string, error) {
+    nodes, err := c.clientset.CoreV1().Nodes().List(context.TODO(), metav1.ListOptions{})
+    if err != nil {
+        return nil, err
+    }
+
+    var nodeNames []string
+    for _, node := range nodes.Items {
+        nodeNames = append(nodeNames, node.Name)
+    }
+
+    return nodeNames, nil
+}
+
+// GetNodeMetrics retrieves the CPU and memory usage metrics for a specific node
+func (c *Client) GetNodeMetrics(nodeName string) (cpuUsage string, memoryUsage string, err error) {
+    nodeMetrics, err := c.metricsClient.MetricsV1beta1().NodeMetricses().Get(context.TODO(), nodeName, metav1.GetOptions{})
+    if err != nil {
+        return "", "", err
+    }
+
+    // Use the resource.Quantity value methods to get CPU and Memory usage
+    cpuQuantity := nodeMetrics.Usage[v1.ResourceCPU]
+    memoryQuantity := nodeMetrics.Usage[v1.ResourceMemory]
+
+    totalCPU := cpuQuantity.MilliValue()
+    totalMemory := memoryQuantity.Value()
+
+    return fmt.Sprintf("%dm", totalCPU), fmt.Sprintf("%dMi", totalMemory/(1024*1024)), nil
+}
+
 // GetPods retrieves the list of pods from the cluster in the specified namespace
 func (c *Client) GetPods() ([]string, error) {
     pods, err := c.clientset.CoreV1().Pods(c.namespace).List(context.TODO(), metav1.ListOptions{})
@@ -84,6 +116,24 @@ func (c *Client) GetPods() ([]string, error) {
         podNames = append(podNames, pod.Name)
     }
     return podNames, nil
+}
+
+// GetPodMetrics retrieves the CPU and memory usage metrics for a specific node
+func (c *Client) GetPodMetrics(podName string) (cpuUsage string, memoryUsage string, err error) {
+    podMetrics, err := c.metricsClient.MetricsV1beta1().PodMetricses(c.namespace).Get(context.TODO(), podName, metav1.GetOptions{})
+    if err != nil {
+        return "", "", err
+    }
+
+    var totalCPU, totalMemory int64
+    for _, container := range podMetrics.Containers {
+        cpuQuantity := container.Usage[v1.ResourceCPU]
+        memoryQuantity := container.Usage[v1.ResourceMemory]
+        totalCPU += cpuQuantity.MilliValue()
+        totalMemory += memoryQuantity.Value()
+    }
+
+    return fmt.Sprintf("%dm", totalCPU), fmt.Sprintf("%dMi", totalMemory/(1024*1024)), nil
 }
 
 // GetPodDetails retrieves the details of a specific pod by name
@@ -170,23 +220,6 @@ func (c *Client) GetPodLogs(podName string) (string, error) {
     return result, nil
 }
 
-func (c *Client) GetPodMetrics(podName string) (cpuUsage string, memoryUsage string, err error) {
-    podMetrics, err := c.metricsClient.MetricsV1beta1().PodMetricses(c.namespace).Get(context.TODO(), podName, metav1.GetOptions{})
-    if err != nil {
-        return "", "", err
-    }
-
-    var totalCPU, totalMemory int64
-    for _, container := range podMetrics.Containers {
-        cpuQuantity := container.Usage[v1.ResourceCPU]
-        memoryQuantity := container.Usage[v1.ResourceMemory]
-        totalCPU += cpuQuantity.MilliValue()
-        totalMemory += memoryQuantity.Value()
-    }
-
-    return fmt.Sprintf("%dm", totalCPU), fmt.Sprintf("%dMi", totalMemory/(1024*1024)), nil
-}
-
 // ListNamespaces retrieves all namespaces available in the cluster
 func (c *Client) ListNamespaces() ([]string, error) {
     namespaces, err := c.clientset.CoreV1().Namespaces().List(context.TODO(), metav1.ListOptions{})
@@ -201,3 +234,6 @@ func (c *Client) ListNamespaces() ([]string, error) {
 
     return namespaceNames, nil
 }
+
+
+
