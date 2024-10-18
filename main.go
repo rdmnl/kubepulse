@@ -24,39 +24,32 @@ import (
 )
 
 func main() {
-    // Set up logging
-    file, err := os.OpenFile("app.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
-    if err != nil {
-        panic(err)
-    }
-    defer file.Close()
-    log.SetOutput(file)
+	file, err := os.OpenFile("app.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	if err != nil {
+		panic(err)
+	}
+	defer file.Close()
+	log.SetOutput(file)
 
-    // Specify the kubeconfig path
-    kubeconfigPath := os.Getenv("KUBECONFIG")
-    if kubeconfigPath == "" {
-        kubeconfigPath = os.ExpandEnv("$HOME/.kube/config")
-    }
+	kubeconfigPath := os.Getenv("KUBECONFIG")
+	if kubeconfigPath == "" {
+		kubeconfigPath = os.ExpandEnv("$HOME/.kube/config")
+	}
 
-    // Create Kubernetes client with the default namespace
-    namespace := "default"
-    client, err := kubernetes.NewClient(kubeconfigPath, namespace)
-    if err != nil {
-        log.Fatalf("Failed to create Kubernetes client: %v. Ensure your KUBECONFIG environment variable is correctly set or provide a valid kubeconfig path.", err)
-    }
+	namespace := "default"
+	client, err := kubernetes.NewClient(kubeconfigPath, namespace)
+	if err != nil {
+		log.Fatalf("Failed to create Kubernetes client: %v. Ensure your KUBECONFIG environment variable is correctly set or provide a valid kubeconfig path.", err)
+	}
 
-    // Set up application
-    app := tview.NewApplication()
+	app := tview.NewApplication()
 
-    // Pass the Kubernetes client to SetupUILayout
-    uiManager, layout := ui.SetupUILayout(app, client)
+	uiManager, layout := ui.SetupUILayout(app, client)
 
-    // Initialize UIController with Kubernetes client
-    controller := ui.NewUIController(app, uiManager, client)
-    ui.SetupNavigation(app, controller)
+	controller := ui.NewUIController(app, uiManager, client)
+	ui.SetupNavigation(app, controller)
 
-    // Run application
-    if err := app.SetRoot(layout, true).Run(); err != nil {
-        panic(err)
-    }
+	if err := app.SetRoot(layout, true).Run(); err != nil {
+		panic(err)
+	}
 }

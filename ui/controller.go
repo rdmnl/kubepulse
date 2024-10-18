@@ -18,437 +18,552 @@ import (
 )
 
 const (
-    quitInstruction         = "'q' Quit"
-    switchPanelsInstruction = "'Tab/Arrow' Switch Panels"
-    backInstruction         = "'b' Back"
-    selectPodInstruction    = "'Enter' Select Pod"
-    viewLogsInstruction     = "'l' View Logs"
-    filterNamespaceInstruction = "'f' Filter Namespace"
+	quitInstruction            = "'q' Quit"
+	podShortcut                = "'p' Pods"
+	nodeShortcut               = "'n' Nodes"
+	logShortcut                = "'l' Logs"
+	detailShortcut             = "'d' Details"
+	filterNamespaceInstruction = "'f' Filter Namespace"
+	backInstruction            = "'b' Back"
 )
 
-
-
-
 type UIController struct {
-    UIManager        *UIManager
-    Application      *tview.Application
-    KubernetesClient kubernetes.KubernetesClient
+	UIManager        *UIManager
+	Application      *tview.Application
+	KubernetesClient kubernetes.KubernetesClient
 }
 
-// NewUIController initializes a new UIController with the necessary state and sets up periodic updates.
 func NewUIController(app *tview.Application, uiManager *UIManager, client kubernetes.KubernetesClient) *UIController {
-    controller := &UIController{
-        Application:      app,
-        UIManager:        uiManager,
-        KubernetesClient: client,
-    }
+	controller := &UIController{
+		Application:      app,
+		UIManager:        uiManager,
+		KubernetesClient: client,
+	}
 
-    // Set up periodic update for pod list and metrics
-    go controller.startPeriodicUpdate()
+	// TODO temporarily disable for lagging problem
+	// go controller.startPeriodicUpdate()
 
-    return controller
+	return controller
 }
 
-// startPeriodicUpdate refreshes the pod list every few seconds
 func (controller *UIController) startPeriodicUpdate() {
-    ticker := time.NewTicker(10 * time.Second) // Set update interval, e.g., every 10 seconds
-    defer ticker.Stop()
+	ticker := time.NewTicker(10 * time.Second) // Set update interval, e.g., every 10 seconds
+	defer ticker.Stop()
 
-    for {
-        <-ticker.C
-        controller.Application.QueueUpdateDraw(func() {
-            controller.updatePodList()
-            controller.updateNodeList()
-        })
-    }
+	for {
+		<-ticker.C
+		controller.Application.QueueUpdateDraw(func() {
+			controller.updatePodList()
+			controller.updateNodeList()
+		})
+	}
 }
-
 
 func (controller *UIController) setPanelFocus(panelIndex int) {
-    if panelIndex < 0 || panelIndex > 2 {
-        errorMessage := fmt.Sprintf("Invalid panel index: %d", panelIndex)
-        utils.Warn(errorMessage)
-        controller.UIManager.StatusBar.SetText("[red]" + errorMessage)
-        return
-    }
+	if panelIndex < 0 || panelIndex > 3 {
+		errorMessage := fmt.Sprintf("Invalid panel index: %d", panelIndex)
+		utils.Warn(errorMessage)
+		controller.UIManager.StatusBar.SetText("[red]" + errorMessage)
+		return
+	}
 
-    controller.UIManager.CurrentPanel = panelIndex
-    panels := []tview.Primitive{controller.UIManager.PodListPanel, controller.UIManager.DetailsPanel, controller.UIManager.LogsViewPanel}
-    controller.Application.SetFocus(panels[panelIndex])
+	controller.UIManager.CurrentPanel = panelIndex
+	panels := []tview.Primitive{
+		controller.UIManager.PodListPanel,  // Index 0
+		controller.UIManager.NodeListPanel, // Index 1
+		controller.UIManager.DetailsPanel,  // Index 2
+		controller.UIManager.LogsViewPanel, // Index 3
+	}
+	controller.Application.SetFocus(panels[panelIndex])
 
-    // Update status bar and focus indicator
-    controller.updateStatusBar()
-    controller.updateFocusIndicator()
-    utils.Info(fmt.Sprintf("Switched focus to panel: %d", panelIndex))
+	controller.updateStatusBar()
+	controller.updateFocusIndicator()
+	utils.Info(fmt.Sprintf("Switched focus to panel: %d", panelIndex))
 }
 
-
-
-// HandlePodSelection handles selecting a pod from the PodListPanel
 func (controller *UIController) HandlePodSelection() {
-    row, _ := controller.UIManager.PodListPanel.GetSelection()
-    if row < 0 || row >= controller.UIManager.PodListPanel.GetRowCount() {
-        utils.Warn(fmt.Sprintf("Selected row index %d is out of bounds", row))
-        return
-    }
-    selectedPod := controller.UIManager.PodListPanel.GetCell(row, 0).Text
-    if selectedPod == "" {
-        utils.Warn("Selected pod name is empty")
-        return
-    }
+	row, _ := controller.UIManager.PodListPanel.GetSelection()
+	if row < 1 || row >= controller.UIManager.PodListPanel.GetRowCount() {
+		utils.Warn(fmt.Sprintf("Selected row index %d is out of bounds", row))
+		return
+	}
+	selectedPod := controller.UIManager.PodListPanel.GetCell(row, 0).Text
+	selectedNamespace := controller.UIManager.PodListPanel.GetCell(row, 1).Text
+	if selectedPod == "" {
+		utils.Warn("Selected pod name is empty")
+		return
+	}
 
-    // Update details panel with selected pod details
-    podDetails, err := controller.KubernetesClient.GetPodDetails(selectedPod)
-    if err != nil {
-        utils.Errorf("Error fetching pod details for %s: %v", selectedPod, err)
-        return
-    }
+	pod := kubernetes.Pod{
+		Name:      selectedPod,
+		Namespace: selectedNamespace,
+	}
 
-    controller.UIManager.SelectedPod = selectedPod
-    controller.UIManager.DetailsPanel.Clear()
-    controller.UIManager.DetailsPanel.SetText(podDetails)
+	podDetails, err := controller.KubernetesClient.GetPodDetails(pod)
+	if err != nil {
+		utils.Errorf("Error fetching pod details for %s/%s: %v", pod.Namespace, pod.Name, err)
+		return
+	}
 
-    // Update focus and status bar
-    controller.Application.SetFocus(controller.UIManager.DetailsPanel)
-    controller.updateStatusBar()
-    controller.updateFocusIndicator()
-    utils.Info(fmt.Sprintf("Updated details panel for pod: %s", selectedPod))
+	controller.UIManager.SelectedPod = fmt.Sprintf("%s/%s", pod.Namespace, pod.Name)
+	controller.UIManager.DetailsPanel.Clear()
+	controller.UIManager.DetailsPanel.SetText(podDetails)
+
+	controller.Application.SetFocus(controller.UIManager.DetailsPanel)
+	controller.updateStatusBar()
+	controller.updateFocusIndicator()
+	utils.Info(fmt.Sprintf("Updated details panel for pod: %s/%s", pod.Namespace, pod.Name))
 }
 
-
-
-
-
-// HandleLogView handles viewing logs for the selected pod
 func (controller *UIController) HandleLogView() {
-    selectedPod, err := controller.getSelectedPod()
-    if err != nil {
-        errorMessage := fmt.Sprintf("Error selecting pod: %v", err)
-        utils.Warn(errorMessage)
-        controller.UIManager.StatusBar.SetText("[red]" + errorMessage)
-        return
-    }
+	row, _ := controller.UIManager.PodListPanel.GetSelection()
+	if row < 1 || row >= controller.UIManager.PodListPanel.GetRowCount() {
+		errorMessage := fmt.Sprintf("Selected row index %d is out of bounds", row)
+		utils.Warn(errorMessage)
+		controller.UIManager.StatusBar.SetText("[red]" + errorMessage)
+		return
+	}
+	selectedPod := controller.UIManager.PodListPanel.GetCell(row, 0).Text
+	selectedNamespace := controller.UIManager.PodListPanel.GetCell(row, 1).Text
+	if selectedPod == "" {
+		errorMessage := "Selected pod name is empty"
+		utils.Warn(errorMessage)
+		controller.UIManager.StatusBar.SetText("[red]" + errorMessage)
+		return
+	}
 
-    // Fetch pod logs using the KubernetesClient instance
-    podLogs, err := controller.KubernetesClient.GetPodLogs(selectedPod)
-    if err != nil {
-        errorMessage := fmt.Sprintf("Error fetching pod logs for %s: %v", selectedPod, err)
-        utils.Errorf(errorMessage)
-        controller.UIManager.StatusBar.SetText("[red]" + errorMessage)
-        return
-    }
+	pod := kubernetes.Pod{
+		Name:      selectedPod,
+		Namespace: selectedNamespace,
+	}
 
-    controller.UIManager.SelectedPod = selectedPod
-    controller.UIManager.LogsViewPanel.SetText(fmt.Sprintf("Logs for pod %s:\n%s", selectedPod, podLogs))
+	podLogs, err := controller.KubernetesClient.GetPodLogs(pod)
+	if err != nil {
+		errorMessage := fmt.Sprintf("Error fetching pod logs for %s/%s: %v", pod.Namespace, pod.Name, err)
+		utils.Errorf(errorMessage)
+		controller.UIManager.StatusBar.SetText("[red]" + errorMessage)
+		return
+	}
 
-    // Update focus and status bar
-    controller.Application.SetFocus(controller.UIManager.LogsViewPanel)
-    controller.updateStatusBar()
-    controller.updateFocusIndicator()
-    utils.Info(fmt.Sprintf("Logs view panel for pod %s displayed", selectedPod))
+	controller.UIManager.SelectedPod = fmt.Sprintf("%s/%s", pod.Namespace, pod.Name)
+	controller.UIManager.LogsViewPanel.SetText(fmt.Sprintf("Logs for pod %s/%s:\n%s", pod.Namespace, pod.Name, podLogs))
+
+	controller.Application.SetFocus(controller.UIManager.LogsViewPanel)
+	controller.updateStatusBar()
+	controller.updateFocusIndicator()
+	utils.Info(fmt.Sprintf("Logs view panel for pod %s/%s displayed", pod.Namespace, pod.Name))
 }
 
-
-
-
-// HandleBackNavigation handles the back navigation action
 func (controller *UIController) HandleBackNavigation() {
-    if controller.UIManager.LogsViewPanel.HasFocus() {
-        controller.setPanelFocus(1) // Switch to DetailsPanel
-    } else if controller.UIManager.DetailsPanel.HasFocus() {
-        controller.setPanelFocus(0) // Switch to PodListPanel
-    } else {
-        errorMessage := "Unexpected focus state during back navigation"
-        utils.Warn(errorMessage)
-        controller.UIManager.StatusBar.SetText("[red]" + errorMessage)
-        return
-    }
+	if controller.UIManager.LogsViewPanel.HasFocus() {
+		controller.setPanelFocus(1) // Switch to DetailsPanel
+	} else if controller.UIManager.DetailsPanel.HasFocus() {
+		if controller.UIManager.SelectedNode != "" {
+			controller.setPanelFocus(1) // Switch to NodeListPanel
+		} else {
+			controller.setPanelFocus(0) // Switch to PodListPanel
+		}
+	} else {
+		errorMessage := "Unexpected focus state during back navigation"
+		utils.Warn(errorMessage)
+		controller.UIManager.StatusBar.SetText("[red]" + errorMessage)
+		return
+	}
 }
 
-// HandleNamespaceFilter handles filtering the pod list by namespace
+func (controller *UIController) HandleNodeSelection() {
+	row, _ := controller.UIManager.NodeListPanel.GetSelection()
+	if row < 1 || row >= controller.UIManager.NodeListPanel.GetRowCount() {
+		utils.Warn(fmt.Sprintf("Selected row index %d is out of bounds", row))
+		return
+	}
+	selectedNode := controller.UIManager.NodeListPanel.GetCell(row, 0).Text
+	if selectedNode == "" {
+		utils.Warn("Selected node name is empty")
+		return
+	}
+
+	pods, err := controller.KubernetesClient.GetPodsByNode(selectedNode)
+	if err != nil {
+		utils.Errorf("Error fetching pods for node %s: %v", selectedNode, err)
+		return
+	}
+
+	controller.UIManager.SelectedNode = selectedNode
+	controller.UIManager.PodListPanel.Clear()
+
+	controller.UIManager.PodListPanel.SetCell(0, 0, tview.NewTableCell("Pod Name").
+		SetTextColor(tcell.ColorWhite).
+		SetSelectable(false).
+		SetAlign(tview.AlignCenter))
+	controller.UIManager.PodListPanel.SetCell(0, 1, tview.NewTableCell("Namespace").
+		SetTextColor(tcell.ColorWhite).
+		SetSelectable(false).
+		SetAlign(tview.AlignCenter))
+	controller.UIManager.PodListPanel.SetCell(0, 2, tview.NewTableCell("CPU").
+		SetTextColor(tcell.ColorWhite).
+		SetSelectable(false).
+		SetAlign(tview.AlignCenter))
+	controller.UIManager.PodListPanel.SetCell(0, 3, tview.NewTableCell("Memory").
+		SetTextColor(tcell.ColorWhite).
+		SetSelectable(false).
+		SetAlign(tview.AlignCenter))
+
+	for row, pod := range pods {
+		cpuUsage, memoryUsage, err := controller.KubernetesClient.GetPodMetrics(pod)
+		if err != nil {
+			cpuUsage, memoryUsage = "N/A", "N/A"
+			utils.Warn(fmt.Sprintf("Error fetching metrics for pod %s/%s: %v", pod.Namespace, pod.Name, err))
+		}
+
+		controller.UIManager.PodListPanel.SetCell(row+1, 0, tview.NewTableCell(pod.Name).
+			SetTextColor(tcell.ColorLightYellow).
+			SetSelectable(true).
+			SetAlign(tview.AlignLeft))
+
+		controller.UIManager.PodListPanel.SetCell(row+1, 1, tview.NewTableCell(pod.Namespace).
+			SetTextColor(tcell.ColorLightGreen).
+			SetSelectable(false).
+			SetAlign(tview.AlignLeft))
+
+		controller.UIManager.PodListPanel.SetCell(row+1, 2, tview.NewTableCell(cpuUsage).
+			SetTextColor(tcell.ColorLightGreen).
+			SetSelectable(false).
+			SetAlign(tview.AlignRight))
+
+		controller.UIManager.PodListPanel.SetCell(row+1, 3, tview.NewTableCell(memoryUsage).
+			SetTextColor(tcell.ColorLightBlue).
+			SetSelectable(false).
+			SetAlign(tview.AlignRight))
+	}
+
+	controller.Application.SetFocus(controller.UIManager.PodListPanel)
+	controller.updateStatusBar()
+	controller.updateFocusIndicator()
+	utils.Info(fmt.Sprintf("Displayed pods for node: %s", selectedNode))
+}
+
 func (controller *UIController) HandleNamespaceFilter() {
-    form := tview.NewForm()
+	form := tview.NewForm()
 
-    // Fetch the list of available namespaces
-    namespaces, err := controller.KubernetesClient.ListNamespaces()
-    if err != nil {
-        utils.Warn(fmt.Sprintf("Error fetching namespaces: %v", err))
-        controller.UIManager.StatusBar.SetText("[red]Error fetching namespaces")
-        return
-    }
+	namespaces, err := controller.KubernetesClient.ListNamespaces()
+	if err != nil {
+		utils.Warn(fmt.Sprintf("Error fetching namespaces: %v", err))
+		controller.UIManager.StatusBar.SetText("[red]Error fetching namespaces")
+		return
+	}
 
-    // Create a dropdown with the available namespaces
-    namespaceDropdown := tview.NewDropDown().
-        SetLabel("Namespace: ").
-        SetOptions(namespaces, nil)
+	namespaceDropdown := tview.NewDropDown().
+		SetLabel("Namespace: ").
+		SetOptions(namespaces, nil)
 
-    form.AddFormItem(namespaceDropdown).
-        AddButton("Apply", func() {
-            _, namespace := namespaceDropdown.GetCurrentOption()
-            if namespace == "" {
-                namespace = "default"
-            }
-            controller.KubernetesClient.SetNamespace(namespace)
-            controller.updatePodList()
-            controller.updatePodTable() // Added call to updatePodTable to refresh the view with updated namespace data
-            controller.Application.SetRoot(controller.UIManager.Layout, true) // Restore the main layout
-        }).
-        AddButton("Cancel", func() {
-            controller.Application.SetRoot(controller.UIManager.Layout, true) // Restore the main layout
-        })
+	form.AddFormItem(namespaceDropdown).
+		AddButton("Apply", func() {
+			_, namespace := namespaceDropdown.GetCurrentOption()
+			if namespace == "" {
+				namespace = "default"
+			}
+			controller.KubernetesClient.SetNamespace(namespace)
+			controller.updatePodList()
+			controller.updatePodTable()
+			controller.Application.SetRoot(controller.UIManager.Layout, true)
+		}).
+		AddButton("Cancel", func() {
+			controller.Application.SetRoot(controller.UIManager.Layout, true)
+		})
 
-    // Center the form using a modal-like Flex
-    modal := tview.NewFlex().
-        SetDirection(tview.FlexRow).
-        AddItem(nil, 0, 1, false).  // Empty space above the form to center vertically
-        AddItem(form, 10, 1, true). // The form itself
-        AddItem(nil, 0, 1, false)   // Empty space below the form
+	modal := tview.NewFlex().
+		SetDirection(tview.FlexRow).
+		AddItem(nil, 0, 1, false).
+		AddItem(form, 10, 1, true).
+		AddItem(nil, 0, 1, false)
 
-    // Configure the form for better visual appearance
-    form.SetBorder(true).
-        SetTitle("Select Namespace").
-        SetTitleAlign(tview.AlignCenter)
+	form.SetBorder(true).
+		SetTitle("Select Namespace").
+		SetTitleAlign(tview.AlignCenter)
 
-    // Display the modal
-    controller.Application.SetRoot(modal, true)
+	controller.Application.SetRoot(modal, true)
 
 }
 
-
-// updatePodTable fetches pod data and updates the table
 func (controller *UIController) updatePodTable() {
-    pods, err := controller.KubernetesClient.GetPods()
-    if err != nil {
-        utils.Warn(fmt.Sprintf("Error fetching pods: %v", err))
-        controller.UIManager.StatusBar.SetText("[red]Error fetching pods")
-        return
-    }
+	pods, err := controller.KubernetesClient.GetPods()
+	if err != nil {
+		utils.Warn(fmt.Sprintf("Error fetching pods: %v", err))
+		controller.UIManager.StatusBar.SetText("[red]Error fetching pods")
+		return
+	}
 
-    controller.UIManager.PodListPanel.Clear()
-    // Set header row
-    controller.UIManager.PodListPanel.SetCell(0, 0, tview.NewTableCell("Pod Name").
-        SetTextColor(tcell.ColorWhite).
-        SetSelectable(false).
-        SetAlign(tview.AlignCenter))
-    controller.UIManager.PodListPanel.SetCell(0, 1, tview.NewTableCell("CPU").
-        SetTextColor(tcell.ColorWhite).
-        SetSelectable(false).
-        SetAlign(tview.AlignCenter))
-    controller.UIManager.PodListPanel.SetCell(0, 2, tview.NewTableCell("Memory").
-        SetTextColor(tcell.ColorWhite).
-        SetSelectable(false).
-        SetAlign(tview.AlignCenter))
+	controller.UIManager.PodListPanel.Clear()
 
-    for row, pod := range pods {
-        cpuUsage, memoryUsage, err := controller.KubernetesClient.GetPodMetrics(pod)
-        if err != nil {
-            utils.Warn(fmt.Sprintf("Error fetching metrics for pod %s: %v", pod, err))
-            cpuUsage, memoryUsage = "N/A", "N/A"
-        }
+	controller.UIManager.PodListPanel.SetCell(0, 0, tview.NewTableCell("Pod Name").
+		SetTextColor(tcell.ColorWhite).
+		SetSelectable(false).
+		SetAlign(tview.AlignCenter))
+	controller.UIManager.PodListPanel.SetCell(0, 1, tview.NewTableCell("Namespace").
+		SetTextColor(tcell.ColorWhite).
+		SetSelectable(false).
+		SetAlign(tview.AlignCenter))
+	controller.UIManager.PodListPanel.SetCell(0, 2, tview.NewTableCell("CPU").
+		SetTextColor(tcell.ColorWhite).
+		SetSelectable(false).
+		SetAlign(tview.AlignCenter))
+	controller.UIManager.PodListPanel.SetCell(0, 3, tview.NewTableCell("Memory").
+		SetTextColor(tcell.ColorWhite).
+		SetSelectable(false).
+		SetAlign(tview.AlignCenter))
 
-        controller.UIManager.PodListPanel.SetCell(row+1, 0, tview.NewTableCell(pod).
-            SetTextColor(tcell.ColorLightYellow).
-            SetBackgroundColor(tcell.ColorBlack).
-            SetSelectable(true))
+	for row, pod := range pods {
+		cpuUsage, memoryUsage, err := controller.KubernetesClient.GetPodMetrics(pod)
+		if err != nil {
+			cpuUsage = "N/A"
+			memoryUsage = "N/A"
+			utils.Warn(fmt.Sprintf("Error fetching metrics for pod %s/%s: %v", pod.Namespace, pod.Name, err))
+		}
 
-        controller.UIManager.PodListPanel.SetCell(row+1, 1, tview.NewTableCell(cpuUsage).
-            SetTextColor(tcell.ColorLightGreen).
-            SetBackgroundColor(tcell.ColorBlack).
-            SetSelectable(false))
+		controller.UIManager.PodListPanel.SetCell(row+1, 0, tview.NewTableCell(pod.Name).
+			SetTextColor(tcell.ColorLightYellow).
+			SetSelectable(true).
+			SetAlign(tview.AlignLeft))
 
-        controller.UIManager.PodListPanel.SetCell(row+1, 2, tview.NewTableCell(memoryUsage).
-            SetTextColor(tcell.ColorLightBlue).
-            SetBackgroundColor(tcell.ColorBlack).
-            SetSelectable(false))
-    }
+		controller.UIManager.PodListPanel.SetCell(row+1, 1, tview.NewTableCell(pod.Namespace).
+			SetTextColor(tcell.ColorLightGreen).
+			SetSelectable(false).
+			SetAlign(tview.AlignLeft))
 
-    controller.updateStatusBar()
+		controller.UIManager.PodListPanel.SetCell(row+1, 2, tview.NewTableCell(cpuUsage).
+			SetTextColor(tcell.ColorLightGreen).
+			SetSelectable(false).
+			SetAlign(tview.AlignRight))
+
+		controller.UIManager.PodListPanel.SetCell(row+1, 3, tview.NewTableCell(memoryUsage).
+			SetTextColor(tcell.ColorLightBlue).
+			SetSelectable(false).
+			SetAlign(tview.AlignRight))
+	}
+
+	controller.updateStatusBar()
 }
 
-// updateNodeList fetches node data and updates the node list table
 func (controller *UIController) updateNodeList() {
-    nodes, err := controller.KubernetesClient.GetNodes()
-    if err != nil {
-        controller.UIManager.StatusBar.SetText("[red]Error fetching nodes")
-        return
-    }
+	nodes, err := controller.KubernetesClient.GetNodes()
+	if err != nil {
+		controller.UIManager.StatusBar.SetText("[red]Error fetching nodes")
+		return
+	}
 
-    controller.UIManager.NodeListPanel.Clear()
+	controller.UIManager.NodeListPanel.Clear()
 
-    // Set header row
-    controller.UIManager.NodeListPanel.SetCell(0, 0, tview.NewTableCell("Node Name").
-        SetTextColor(tcell.ColorWhite).
-        SetSelectable(false).
-        SetAlign(tview.AlignCenter))
-    controller.UIManager.NodeListPanel.SetCell(0, 1, tview.NewTableCell("CPU").
-        SetTextColor(tcell.ColorWhite).
-        SetSelectable(false).
-        SetAlign(tview.AlignCenter))
-    controller.UIManager.NodeListPanel.SetCell(0, 2, tview.NewTableCell("Memory").
-        SetTextColor(tcell.ColorWhite).
-        SetSelectable(false).
-        SetAlign(tview.AlignCenter))
+	controller.UIManager.NodeListPanel.SetCell(0, 0, tview.NewTableCell("Node Name").
+		SetTextColor(tcell.ColorWhite).
+		SetSelectable(false).
+		SetAlign(tview.AlignCenter))
+	controller.UIManager.NodeListPanel.SetCell(0, 1, tview.NewTableCell("CPU").
+		SetTextColor(tcell.ColorWhite).
+		SetSelectable(false).
+		SetAlign(tview.AlignCenter))
+	controller.UIManager.NodeListPanel.SetCell(0, 2, tview.NewTableCell("Memory").
+		SetTextColor(tcell.ColorWhite).
+		SetSelectable(false).
+		SetAlign(tview.AlignCenter))
 
-    // Add node data to the panel
-    for row, node := range nodes {
-        cpuUsage, memoryUsage, err := controller.KubernetesClient.GetNodeMetrics(node)
-        if err != nil {
-            cpuUsage = "N/A"
-            memoryUsage = "N/A"
-        }
+	for row, node := range nodes {
+		cpuUsage, memoryUsage, err := controller.KubernetesClient.GetNodeMetrics(node)
+		if err != nil {
+			cpuUsage = "N/A"
+			memoryUsage = "N/A"
+		}
 
-        controller.UIManager.NodeListPanel.SetCell(row+1, 0, tview.NewTableCell(node).
-            SetTextColor(tcell.ColorLightYellow).
-            SetSelectable(true))
-        controller.UIManager.NodeListPanel.SetCell(row+1, 1, tview.NewTableCell(cpuUsage).
-            SetTextColor(tcell.ColorLightGreen).
-            SetAlign(tview.AlignRight))
-        controller.UIManager.NodeListPanel.SetCell(row+1, 2, tview.NewTableCell(memoryUsage).
-            SetTextColor(tcell.ColorLightBlue).
-            SetAlign(tview.AlignRight))
-    }
+		controller.UIManager.NodeListPanel.SetCell(row+1, 0, tview.NewTableCell(node).
+			SetTextColor(tcell.ColorLightYellow).
+			SetSelectable(true))
+		controller.UIManager.NodeListPanel.SetCell(row+1, 1, tview.NewTableCell(cpuUsage).
+			SetTextColor(tcell.ColorLightGreen).
+			SetAlign(tview.AlignRight))
+		controller.UIManager.NodeListPanel.SetCell(row+1, 2, tview.NewTableCell(memoryUsage).
+			SetTextColor(tcell.ColorLightBlue).
+			SetAlign(tview.AlignRight))
+	}
 }
 
-
-// updatePodList updates the pod list panel with the current namespace's pods
 func (controller *UIController) updatePodList() {
-    pods, err := controller.KubernetesClient.GetPods()
-    if err != nil {
-        utils.Warn(fmt.Sprintf("Error fetching pods: %v", err))
-        controller.UIManager.StatusBar.SetText("[red]Error fetching pods")
-        return
-    }
+	pods, err := controller.KubernetesClient.GetPods()
+	if err != nil {
+		utils.Warn(fmt.Sprintf("Error fetching pods: %v", err))
+		controller.UIManager.StatusBar.SetText("[red]Error fetching pods")
+		return
+	}
 
-    // Clear the pod list but set up headers again
-    controller.UIManager.PodListPanel.Clear()
+	controller.UIManager.PodListPanel.Clear()
 
-    // Set header row
-    controller.UIManager.PodListPanel.SetCell(0, 0, tview.NewTableCell("Pod Name").
-        SetTextColor(tcell.ColorWhite).
-        SetSelectable(false).
-        SetAlign(tview.AlignCenter))
-    controller.UIManager.PodListPanel.SetCell(0, 1, tview.NewTableCell("CPU").
-        SetTextColor(tcell.ColorWhite).
-        SetSelectable(false).
-        SetAlign(tview.AlignCenter))
-    controller.UIManager.PodListPanel.SetCell(0, 2, tview.NewTableCell("Memory").
-        SetTextColor(tcell.ColorWhite).
-        SetSelectable(false).
-        SetAlign(tview.AlignCenter))
+	controller.UIManager.PodListPanel.SetCell(0, 0, tview.NewTableCell("Pod Name").
+		SetTextColor(tcell.ColorWhite).
+		SetSelectable(false).
+		SetAlign(tview.AlignCenter))
+	controller.UIManager.PodListPanel.SetCell(0, 1, tview.NewTableCell("Namespace").
+		SetTextColor(tcell.ColorWhite).
+		SetSelectable(false).
+		SetAlign(tview.AlignCenter))
+	controller.UIManager.PodListPanel.SetCell(0, 2, tview.NewTableCell("CPU").
+		SetTextColor(tcell.ColorWhite).
+		SetSelectable(false).
+		SetAlign(tview.AlignCenter))
+	controller.UIManager.PodListPanel.SetCell(0, 3, tview.NewTableCell("Memory").
+		SetTextColor(tcell.ColorWhite).
+		SetSelectable(false).
+		SetAlign(tview.AlignCenter))
 
-    // Add pod data
-    for row, pod := range pods {
-        cpuUsage, memoryUsage, err := controller.KubernetesClient.GetPodMetrics(pod)
-        if err != nil {
-            cpuUsage = "N/A"
-            memoryUsage = "N/A"
-            utils.Warn(fmt.Sprintf("Error fetching metrics for pod %s: %v", pod, err))
-        }
+	for row, pod := range pods {
+		if pod.Name == "" {
+			continue
+		}
 
-        controller.UIManager.PodListPanel.SetCell(row+1, 0, tview.NewTableCell(pod).
-            SetTextColor(tcell.ColorLightYellow).
-            SetSelectable(true).
-            SetAlign(tview.AlignLeft))
+		cpuUsage, memoryUsage, err := controller.KubernetesClient.GetPodMetrics(pod)
+		if err != nil {
+			cpuUsage = "N/A"
+			memoryUsage = "N/A"
+			utils.Warn(fmt.Sprintf("Error fetching metrics for pod %s/%s: %v", pod.Namespace, pod.Name, err))
+		}
 
-        controller.UIManager.PodListPanel.SetCell(row+1, 1, tview.NewTableCell(cpuUsage).
-            SetTextColor(tcell.ColorLightGreen).
-            SetSelectable(false).
-            SetAlign(tview.AlignRight))
+		controller.UIManager.PodListPanel.SetCell(row+1, 0, tview.NewTableCell(pod.Name).
+			SetTextColor(tcell.ColorLightYellow).
+			SetSelectable(true).
+			SetAlign(tview.AlignLeft))
 
-        controller.UIManager.PodListPanel.SetCell(row+1, 2, tview.NewTableCell(memoryUsage).
-            SetTextColor(tcell.ColorLightBlue).
-            SetSelectable(false).
-            SetAlign(tview.AlignRight))
-    }
+		controller.UIManager.PodListPanel.SetCell(row+1, 1, tview.NewTableCell(pod.Namespace).
+			SetTextColor(tcell.ColorLightGreen).
+			SetSelectable(false).
+			SetAlign(tview.AlignLeft))
 
-    controller.updateStatusBar()
+		controller.UIManager.PodListPanel.SetCell(row+1, 2, tview.NewTableCell(cpuUsage).
+			SetTextColor(tcell.ColorLightGreen).
+			SetSelectable(false).
+			SetAlign(tview.AlignRight))
+
+		controller.UIManager.PodListPanel.SetCell(row+1, 3, tview.NewTableCell(memoryUsage).
+			SetTextColor(tcell.ColorLightBlue).
+			SetSelectable(false).
+			SetAlign(tview.AlignRight))
+	}
+
+	controller.updateStatusBar()
 }
 
-
-// UpdateFocusIndicator updates the visual indication of the currently focused panel
 func (controller *UIController) updateFocusIndicator() {
-    if controller.UIManager.CurrentPanel < 0 || controller.UIManager.CurrentPanel > 2 {
-        errorMessage := fmt.Sprintf("Invalid panel index: %d", controller.UIManager.CurrentPanel)
-        utils.Warn(errorMessage)
-        controller.UIManager.StatusBar.SetText("[red]" + errorMessage)
-        return
-    }
+	if controller.UIManager.CurrentPanel < 0 || controller.UIManager.CurrentPanel > 3 {
+		errorMessage := fmt.Sprintf("Invalid panel index: %d", controller.UIManager.CurrentPanel)
+		utils.Warn(errorMessage)
+		controller.UIManager.StatusBar.SetText("[red]" + errorMessage)
+		return
+	}
 
-    panels := []*tview.Table{
-        controller.UIManager.PodListPanel,
-    }
-    textPanels := []*tview.TextView{
-        controller.UIManager.DetailsPanel,
-        controller.UIManager.LogsViewPanel,
-    }
+	panels := []*tview.Table{
+		controller.UIManager.PodListPanel,
+		controller.UIManager.NodeListPanel,
+	}
+	textPanels := []*tview.TextView{
+		controller.UIManager.DetailsPanel,
+		controller.UIManager.LogsViewPanel,
+	}
 
-    for i, panel := range panels {
-        if i == controller.UIManager.CurrentPanel {
-            panel.SetBorderColor(tcell.ColorYellow) // Highlight focused panel
-            panel.SetTitle(fmt.Sprintf("[yellow]%s[white]", panel.GetTitle())) // Highlight title in yellow
-        } else {
-            panel.SetBorderColor(tcell.ColorLightCyan) // Default color for unfocused
-            panel.SetTitle(panel.GetTitle()) // Reset title
-        }
-    }
+	panelTitles := [4]string{" Pods ", " Nodes ", " Detail ", " Logs "}
 
-    for i, panel := range textPanels {
-        if i+1 == controller.UIManager.CurrentPanel { // +1 because tables and text panels are treated differently here
-            panel.SetBorderColor(tcell.ColorYellow) // Highlight focused panel
-            panel.SetTitle(fmt.Sprintf("[yellow]%s[white]", panel.GetTitle())) // Highlight title in yellow
-        } else {
-            panel.SetBorderColor(tcell.ColorLightCyan) // Default color for unfocused
-            panel.SetTitle(panel.GetTitle()) // Reset title
-        }
-    }
+	for i, panel := range panels {
+		if i == controller.UIManager.CurrentPanel {
+			panel.SetBorderColor(tcell.ColorLightGreen)
+			panel.SetTitle(panelTitles[i])
+		} else {
+			panel.SetBorderColor(tcell.ColorGray)
+			panel.SetTitle("")
+		}
+	}
 
-    utils.Info(fmt.Sprintf("Focus indicator updated for panel: %d", controller.UIManager.CurrentPanel))
+	for i, panel := range textPanels {
+		if i+2 == controller.UIManager.CurrentPanel {
+			panel.SetBorderColor(tcell.ColorLightGreen)
+			panel.SetTitle(panelTitles[i+2])
+		} else {
+			panel.SetBorderColor(tcell.ColorGray)
+			panel.SetTitle("")
+		}
+	}
+
+	utils.Info(fmt.Sprintf("Focus indicator updated for panel: %d", controller.UIManager.CurrentPanel))
 }
 
-func (controller *UIController) getSelectedPod() (string, error) {
-    row, _ := controller.UIManager.PodListPanel.GetSelection()
-    if row < 0 || row >= controller.UIManager.PodListPanel.GetRowCount() {
-        return "", fmt.Errorf("selected row index %d is out of bounds", row)
-    }
-    selectedPod := controller.UIManager.PodListPanel.GetCell(row, 0).Text
-    if selectedPod == "" {
-        return "", fmt.Errorf("selected pod name is empty")
-    }
-    return selectedPod, nil
+func (controller *UIController) getSelectedPod() (kubernetes.Pod, error) {
+	row, _ := controller.UIManager.PodListPanel.GetSelection()
+	if row < 1 || row >= controller.UIManager.PodListPanel.GetRowCount() {
+		return kubernetes.Pod{}, fmt.Errorf("selected row index %d is out of bounds", row)
+	}
+	selectedPod := controller.UIManager.PodListPanel.GetCell(row, 0).Text
+	selectedNamespace := controller.UIManager.PodListPanel.GetCell(row, 1).Text
+	if selectedPod == "" {
+		return kubernetes.Pod{}, fmt.Errorf("selected pod name is empty")
+	}
+	return kubernetes.Pod{
+		Name:      selectedPod,
+		Namespace: selectedNamespace,
+	}, nil
 }
-
-
-
-
-func (controller *UIController) getStatusBarMessage(panel int, selectedPod string) string {
-    switch panel {
-    case 0: // PodListPanel
-        if controller.UIManager.PodListPanel.GetRowCount() > 0 {
-            return fmt.Sprintf("%s | %s | %s | %s | %s", quitInstruction, filterNamespaceInstruction, viewLogsInstruction, switchPanelsInstruction, selectPodInstruction)
-        } else {
-            return fmt.Sprintf("No pods available. %s | %s", quitInstruction, switchPanelsInstruction)
-        }
-    case 1: // DetailsPanel
-        if selectedPod != "" {
-            return fmt.Sprintf("%s | %s | %s", backInstruction, switchPanelsInstruction, quitInstruction)
-        } else {
-            return fmt.Sprintf("No pod selected. %s", backInstruction)
-        }
-    case 2: // LogsViewPanel
-        if selectedPod != "" {
-            return fmt.Sprintf("%s | %s | %s", backInstruction, switchPanelsInstruction, quitInstruction)
-        } else {
-            return fmt.Sprintf("No logs available. %s", backInstruction)
-        }
-    default:
-        return fmt.Sprintf("[red]Invalid panel index: %d", panel)
-    }
-}
-
-
 
 func (controller *UIController) updateStatusBar() {
-    statusMessage := controller.getStatusBarMessage(controller.UIManager.CurrentPanel, controller.UIManager.SelectedPod)
-    controller.UIManager.StatusBar.SetText(statusMessage)
-    utils.Info("Status bar updated")
+	statusMessage := controller.getStatusBarMessage(controller.UIManager.CurrentPanel, controller.UIManager.SelectedPod)
+	controller.UIManager.StatusBar.SetText(statusMessage)
+	utils.Info("Status bar updated")
+}
+
+func (controller *UIController) getStatusBarMessage(panel int, selectedPod string) string {
+	switch panel {
+	case 0: // PodListPanel
+		if controller.UIManager.PodListPanel.GetRowCount() > 1 {
+			return fmt.Sprintf("%s | %s | %s | %s | %s | %s | %s",
+				quitInstruction,
+				podShortcut,
+				nodeShortcut,
+				detailShortcut,
+				logShortcut,
+				filterNamespaceInstruction,
+				backInstruction)
+		} else {
+			return fmt.Sprintf("No pods available. %s | %s | %s",
+				quitInstruction,
+				podShortcut,
+				nodeShortcut)
+		}
+	case 1: // NodeListPanel
+		return fmt.Sprintf("%s | %s | %s | %s",
+			quitInstruction,
+			podShortcut,
+			nodeShortcut,
+			backInstruction)
+	case 2: // DetailsPanel
+		if selectedPod != "" {
+			return fmt.Sprintf("%s | %s | %s | %s",
+				backInstruction,
+				podShortcut,
+				nodeShortcut,
+				quitInstruction)
+		} else {
+			return fmt.Sprintf("No pod selected. %s | %s | %s",
+				backInstruction,
+				podShortcut,
+				nodeShortcut)
+		}
+	case 3: // LogsViewPanel
+		if selectedPod != "" {
+			return fmt.Sprintf("%s | %s | %s | %s",
+				backInstruction,
+				podShortcut,
+				nodeShortcut,
+				quitInstruction)
+		} else {
+			return fmt.Sprintf("No logs available. %s | %s | %s",
+				backInstruction,
+				podShortcut,
+				nodeShortcut)
+		}
+	default:
+		return fmt.Sprintf("[red]Invalid panel index: %d", panel)
+	}
 }
