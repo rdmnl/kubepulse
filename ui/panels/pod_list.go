@@ -86,40 +86,4 @@ func SetupPodListPanel(client kubernetes.KubernetesClient) *tview.Table {
 }
 
 
-// updatePodTable fetches pod data and updates the table
-func updatePodTable(client kubernetes.KubernetesClient, table *tview.Table) {
-    pods, err := client.GetPods()
-    if err != nil {
-        utils.Info(fmt.Sprintf("Error fetching pods: %v", err))
-        return
-    }
 
-    for row, pod := range pods {
-        if pod == "" {
-            continue
-        }
-
-        // Fetch pod metrics (CPU and Memory usage)
-        cpuUsage, memoryUsage, err := client.GetPodMetrics(pod)
-        if err != nil {
-            cpuUsage = "N/A"
-            memoryUsage = "N/A"
-            utils.Info(fmt.Sprintf("Error fetching metrics for pod %s: %v", pod, err))
-        }
-
-        table.SetCell(row+1, 0, tview.NewTableCell(pod).
-            SetTextColor(tcell.ColorLightYellow).
-            SetBackgroundColor(tcell.ColorBlack).
-            SetSelectable(true))
-
-        table.SetCell(row+1, 1, tview.NewTableCell(cpuUsage).
-            SetTextColor(tcell.ColorLightGreen).
-            SetBackgroundColor(tcell.ColorBlack).
-            SetSelectable(false))
-
-        table.SetCell(row+1, 2, tview.NewTableCell(memoryUsage).
-            SetTextColor(tcell.ColorLightBlue).
-            SetBackgroundColor(tcell.ColorBlack).
-            SetSelectable(false))
-    }
-}
